@@ -7,7 +7,8 @@ local MODULE_DIR = debug.getinfo(1, "S").source:match("^@(.*)/[^/]*$")  -- this 
 local HTML_PATH = MODULE_DIR .. "/board.html"
 local DB_PATH = MODULE_DIR .. "/keys.db"  -- kept out of git by .gitignore in this folder
 local HISTORY_DAYS = 7         -- raw press history kept this long; all-time counts are kept forever
-local HISTORY_PAGE = 10        -- rows per page for history and clipboard on the board
+local HISTORY_PAGE = 10        -- rows per page for key history on the board
+local CLIP_PAGE = 5            -- rows per page for clipboard history on the board
 local CLIP_PREVIEW = 400       -- characters of each clipboard item sent to the board
 local CLIP_MAX_CHARS = 200000  -- longer clipboard text is truncated before saving
 local CLIP_POLL = 0.5          -- seconds between clipboard checks
@@ -187,7 +188,7 @@ local function snapshot()
   local counts = {}
   for label, n in db:urows("SELECT label, n FROM counts") do counts[#counts + 1] = { label, n } end
   local page = historyPage(0, HISTORY_PAGE)
-  local clips = clipPage(0, HISTORY_PAGE)
+  local clips = clipPage(0, CLIP_PAGE)
   return { type = "snapshot", counts = counts, history = page.rows, historyTotal = page.total,
            clips = clips.rows, clipsTotal = clips.total, dbPath = DB_PATH, historyDays = HISTORY_DAYS }
 end
@@ -288,13 +289,13 @@ local function createWindow()
       -- through the ui queue so it lands after any presses already in the page's pipeline
       ui(historyPage(tonumber(body.offset) or 0, tonumber(body.limit) or HISTORY_PAGE))
     elseif body.action == "clips" then
-      ui(clipPage(tonumber(body.offset) or 0, tonumber(body.limit) or HISTORY_PAGE))
+      ui(clipPage(tonumber(body.offset) or 0, tonumber(body.limit) or CLIP_PAGE))
     elseif body.action == "copyClip" then
       copyClip(tonumber(body.id) or 0)
     elseif body.action == "deleteClip" then
       db:exec("DELETE FROM clips WHERE id = " .. math.floor(tonumber(body.id) or 0))
       lastClip = nil  -- copying the same text again should save it again
-      local offset, limit = tonumber(body.offset) or 0, tonumber(body.limit) or HISTORY_PAGE
+      local offset, limit = tonumber(body.offset) or 0, tonumber(body.limit) or CLIP_PAGE
       local page = clipPage(offset, limit)
       -- deleted the last item on the last page: step back a page
       if #page.rows == 0 and page.offset > 0 then page = clipPage(page.offset - limit, limit) end
@@ -302,7 +303,7 @@ local function createWindow()
     elseif body.action == "clearClips" then
       db:exec("DELETE FROM clips")
       lastClip = nil
-      ui(clipPage(0, HISTORY_PAGE))
+      ui(clipPage(0, CLIP_PAGE))
     end
   end)
   M.wv = hs.webview.new(targetScreen():frame(), { developerExtrasEnabled = true }, uc)

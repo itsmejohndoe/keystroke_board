@@ -147,20 +147,19 @@ tr.fresh td { animation: fresh 1s ease-out; }
 .pager .info { flex: 1 1 auto; min-width: 0; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pager button:disabled { opacity: .4; cursor: default; }
 
-/* clipboard rows grow with their preview (up to 3 lines), unlike the fixed-height key tables */
-.cliptable-wrap { overflow-x: auto; }
+/* clipboard reserves room for a full page (header + CLIP_PAGE single-line rows of --row-h) */
+/* +1px: the header's bottom border collapses into the first row and adds a pixel to the table */
+.cliptable-wrap { height: calc(var(--head-h) + 5 * var(--row-h) + 1px); overflow: hidden; }
 .cliptable { table-layout: fixed; }
 .cliptable th.time-col { width: 6.5rem; }
 .cliptable th.origin-col { width: 9rem; }
 .cliptable th.actions-col { width: 9.5rem; }
-.cliptable td { height: auto; padding: 10px 14px; vertical-align: top; }
-.cliptable td.time { padding-top: 12px; }
-td.origin { font-weight: 700; overflow: hidden; text-overflow: ellipsis; padding-top: 11px; }
-.cliptable td.actions { padding-block: 7px; }
+td.origin { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* one line per item: newlines show as spaces, long text ends in an ellipsis */
 .preview {
-  margin: 0; font: 400 .85rem/1.45 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere;
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; user-select: text;
+  margin: 0; font: 400 .85rem/1.45 var(--font-mono);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: text;
 }
 .h2side { display: flex; align-items: center; gap: 12px; min-width: 0; }
 button.small, .rowbtns button { padding: 4px 10px; font-size: .8rem; white-space: nowrap; }
@@ -326,7 +325,8 @@ button.armed { border-color: #c4452f; color: #c4452f; }
   });
 
   // state comes from Hammerspoon, which owns the SQLite file
-  const PAGE = 10;
+  const PAGE = 10;       // Most used and History
+  const CLIP_PAGE = 5;   // Clipboard
   let counts = new Map();
   let topPage = 0;
 
@@ -407,7 +407,7 @@ button.armed { border-color: #c4452f; color: #c4452f; }
     const pre = document.createElement('p');
     pre.className = 'preview';
     pre.textContent = c.preview;
-    pre.title = c.length > c.preview.length ? 'Preview is shortened; Copy puts back the full text' : '';
+    pre.title = c.preview;  // hover shows more than the single line; Copy always puts back the full text
     const btns = document.createElement('div');
     btns.className = 'rowbtns';
     const b = document.createElement('button');
@@ -417,7 +417,7 @@ button.armed { border-color: #c4452f; color: #c4452f; }
     d.type = 'button'; d.className = 'del'; d.textContent = 'Delete';
     d.addEventListener('click', () => {
       d.disabled = true;
-      window.webkit?.messageHandlers?.kb?.postMessage({ action: 'deleteClip', id: c.id, offset: clips.offset, limit: PAGE });
+      window.webkit?.messageHandlers?.kb?.postMessage({ action: 'deleteClip', id: c.id, offset: clips.offset, limit: CLIP_PAGE });
     });
     btns.append(b, d);
     content.append(pre);
@@ -429,14 +429,14 @@ button.armed { border-color: #c4452f; color: #c4452f; }
   }
 
   // a newest-first list paged from the database; offset 0 is the live page
-  function makeFeed({ list, prev, next, latest, info, action, unit, item, empty }) {
+  function makeFeed({ list, prev, next, latest, info, action, unit, item, empty, size = PAGE }) {
     const f = { rows: [], offset: 0, total: 0 };
     f.renderPager = () => {
-      const pages = Math.max(1, Math.ceil(f.total / PAGE));
-      const page = Math.min(pages, Math.floor(f.offset / PAGE) + 1);
+      const pages = Math.max(1, Math.ceil(f.total / size));
+      const page = Math.min(pages, Math.floor(f.offset / size) + 1);
       $(info).textContent = `Page ${page} of ${pages} · ${f.total.toLocaleString()} ${f.total === 1 ? unit[0] : unit[1]}`;
       $(prev).disabled = f.offset === 0;
-      $(next).disabled = f.offset + PAGE >= f.total;
+      $(next).disabled = f.offset + size >= f.total;
       $(latest).hidden = f.offset === 0;
     };
     f.render = () => {
@@ -456,19 +456,19 @@ button.armed { border-color: #c4452f; color: #c4452f; }
       f.total++;
       if (f.offset === 0) {
         f.rows.unshift(r);
-        if (f.rows.length > PAGE) f.rows.length = PAGE;
+        if (f.rows.length > size) f.rows.length = size;
         const ul = $(list);
         if (ul.firstElementChild?.classList.contains('empty')) ul.textContent = '';
         ul.prepend(item(r, true));
-        while (ul.children.length > PAGE) ul.lastElementChild.remove();
+        while (ul.children.length > size) ul.lastElementChild.remove();
       } else {
         f.offset++;  // keep an older page still while new rows arrive
       }
       f.renderPager();
     };
-    const request = offset => window.webkit?.messageHandlers?.kb?.postMessage({ action, offset: Math.max(0, offset), limit: PAGE });
-    $(prev).addEventListener('click', () => request(f.offset - PAGE));
-    $(next).addEventListener('click', () => request(f.offset + PAGE));
+    const request = offset => window.webkit?.messageHandlers?.kb?.postMessage({ action, offset: Math.max(0, offset), limit: size });
+    $(prev).addEventListener('click', () => request(f.offset - size));
+    $(next).addEventListener('click', () => request(f.offset + size));
     $(latest).addEventListener('click', () => request(0));
     return f;
   }
@@ -476,7 +476,7 @@ button.armed { border-color: #c4452f; color: #c4452f; }
   const hist = makeFeed({ list: 'hist', prev: 'histPrev', next: 'histNext', latest: 'histLatest', info: 'histInfo',
     action: 'history', unit: ['press', 'presses'], item: histItem, empty: histEmpty });
   const clips = makeFeed({ list: 'clips', prev: 'clipPrev', next: 'clipNext', latest: 'clipLatest', info: 'clipInfo',
-    action: 'clips', unit: ['item', 'items'], item: clipItem, empty: clipEmpty });
+    action: 'clips', unit: ['item', 'items'], item: clipItem, empty: clipEmpty, size: CLIP_PAGE });
 
   // keys stay lit at least MIN_LIT ms: some keys (fn) send down and up in the same instant,
   // which would otherwise add and remove the highlight before it is ever painted

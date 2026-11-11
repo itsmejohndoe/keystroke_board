@@ -87,7 +87,9 @@ clips   (id INTEGER PRIMARY KEY, ts INTEGER, kind TEXT, content TEXT, app TEXT) 
 - **Colors:** every color is a CSS custom property on `:root`, redefined under `prefers-color-scheme: dark`.
 - **Paged lists:** `makeFeed()` serves both History and Clipboard (both tables; Clipboard columns are Time, Origin = source app, Content, actions). Offset 0 is the live page: new rows are prepended there. On older pages `offset++` keeps the view still while new items arrive. Every feed passes an `empty()` element factory.
 - **Most used:** paged on the page itself from the full `counts` map.
-- **Fixed table height:** `.rows` reserves the header plus exactly 10 rows (`--head-h: 36px`, `--row-h: 40px`), so panels never change height. Cells don't wrap. If you change rows per page, change `PAGE` in JS, `HISTORY_PAGE` in Lua and the `10 *` in `.rows` together.
+- **Fixed table heights:** every table reserves room for a full page, so panels never change height. `--head-h` (36px) is shared by all headers.
+  - **Most used and History:** 10 rows of `--row-h` (40px) in `.rows`. Cells don't wrap. To change the page size, change `PAGE` in JS, `HISTORY_PAGE` in Lua and the `10 *` in `.rows` together.
+  - **Clipboard:** 5 single-line rows of `--row-h` (40px) in `.cliptable-wrap`. Each preview is one line: newlines show as spaces, long text ends in an ellipsis, and the full preview is in the hover tooltip. Add 1px because the header's bottom border collapses into the first row. To change the page size, change `CLIP_PAGE` in JS, `CLIP_PAGE` in Lua and the `5 *` in `.cliptable-wrap` together. `makeFeed` takes a `size` option for this.
 - **Pager text:** must stay on one line. The buttons are compact (`‹` `›` and **Latest**), and `.info` truncates with an ellipsis.
 - **Destructive buttons:** use `confirmButton(btn, action)`, which needs a second click within 3s. The webview can't show `confirm()`.
 - **Copy:** user-facing text says what happens ("Clear clipboard history", "Copied"). Write units out ("presses", "chars") and handle the singular.
