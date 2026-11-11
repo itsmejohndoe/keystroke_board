@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keystroke Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Schibsted+Grotesk:wght@500;600;700&display=swap">
+<style>
+/* Layout: one column sized for a 1080px portrait screen. Keyboard on top, then "most used" and "history" side by side. */
+:root {
+  --bg: #e9ecef;
+  --surface: #f8f9fa;
+  --fg: #16191d;
+  --muted: #5f6873;
+  --line: #d3d8de;
+  --accent: #a85f00;
+  --accent-soft: #f3dcb8;
+  --ok: #2fb36b;
+  --warn: #d08a00;
+  /* the keyboard itself is a dark object in both themes */
+  --case: #2a2d31;
+  --case-edge: #1c1e21;
+  --cap: #3a3e44;
+  --cap-top: #44494f;
+  --cap-mod: #303338;
+  --legend: #d9dde2;
+  --glow: #ffb547;
+  --font-ui: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121417; --surface: #1a1d21; --fg: #e7eaee; --muted: #8e98a4;
+    --line: #2b3036; --accent: #ffb547; --accent-soft: #4a3517;
+    --case: #23262a; --case-edge: #0b0c0e; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-ui); font-size: 15px; line-height: 1.45;
+  cursor: default; user-select: none;
+}
+.page {
+  max-width: 1040px; margin: 0 auto;
+  padding: 28px 20px 24px;
+  display: grid; gap: 24px;
+}
+
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px; }
+h1 { margin: 0; font-size: 1.6rem; font-weight: 700; letter-spacing: -0.01em; }
+.sub { margin: 2px 0 0; color: var(--muted); font-size: .9rem; }
+.actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.actions button { height: 32px; }
+.status {
+  display: inline-flex; align-items: center; gap: 8px;
+  font: 500 .8rem var(--font-mono); text-transform: uppercase; letter-spacing: .06em;
+  padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--muted);
+}
+.status:hover, .actions button:hover { border-color: var(--muted); }
+.status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.status[data-state="listening"] { color: var(--fg); }
+.status[data-state="listening"]::before { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
+.status[data-state="secure"]::before, .status[data-state="paused"]::before, .status[data-state="noaccess"]::before { background: var(--warn); }
+
+.case {
+  background: var(--case); border-radius: 14px; padding: 14px 14px 16px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, 0 12px 30px -12px rgba(0,0,0,.45), 0 0 0 1px var(--case-edge);
+}
+.kb { container-type: inline-size; display: grid; }
+.row { display: flex; }
+.row.f { margin-bottom: 1.4cqw; }
+.key { flex: 0 0 calc(var(--w, 1) * 100cqw / 16); height: calc(100cqw / 16 * .92); padding: .22cqw; }
+.cap {
+  position: relative; height: 100%; border-radius: .6cqw;
+  background: linear-gradient(var(--cap-top), var(--cap));
+  box-shadow: 0 .25cqw 0 var(--case-edge);
+  color: var(--legend);
+  font: 500 clamp(6px, 1.05cqw, 13px)/1.1 var(--font-mono);
+  display: flex; flex-direction: column; justify-content: center; align-items: center; gap: .3cqw;
+  transition: transform .5s ease, box-shadow .7s ease, color .7s ease, background .7s ease;
+}
+.cap.mod { background: linear-gradient(var(--cap), var(--cap-mod)); align-items: flex-start; padding-left: .9cqw; }
+.cap.mod.r { align-items: flex-end; padding-right: .9cqw; padding-left: 0; }
+.cap .alt { opacity: .6; }
+.cap.dead { opacity: .45; }
+.cap.esc { color: var(--glow); }
+.key.down .cap {
+  transform: translateY(.22cqw);
+  background: linear-gradient(#5a4a33, #4a3d2b);
+  color: #fff4e2;
+  box-shadow: 0 0 0 var(--case-edge), 0 0 1.6cqw .2cqw color-mix(in srgb, var(--glow) 70%, transparent), 0 0 0 .14cqw var(--glow) inset;
+  transition: transform .04s, box-shadow .04s, color .04s, background .04s;
+}
+.kbfoot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 12px; font: 400 .75rem var(--font-mono); color: #8a919a; }
+
+.now {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px;
+  background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+}
+.now > div { background: var(--surface); padding: 12px 16px; min-width: 0; }
+.label { font: 500 .7rem var(--font-mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.big { font: 600 1.5rem var(--font-mono); font-variant-numeric: tabular-nums; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#last.big kbd { font-size: 1rem; }
+
+.panels { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; min-height: 0; }
+@media (max-width: 720px) { .panels { grid-template-columns: minmax(0, 1fr); } }
+section { display: flex; flex-direction: column; min-height: 0; }
+section h2 { margin: 0 0 10px; font-size: 1rem; font-weight: 600; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+section h2 small { font: 400 .75rem var(--font-mono); color: var(--muted); }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow-y: auto; min-height: 0; }
+
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+/* both tables reserve room for a full page (header + 10 rows) so the panels never change height */
+:root { --head-h: 36px; --row-h: 40px; }  /* shared by every table header and the fixed-height key tables */
+.rows { height: calc(var(--head-h) + 10 * var(--row-h)); overflow: hidden; }
+th { height: var(--head-h); background: var(--surface); text-align: left; font: 500 .7rem var(--font-mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 0 14px; border-bottom: 1px solid var(--line); }
+td { height: var(--row-h); padding: 0 14px; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
+td.empty { white-space: normal; }
+tr:last-child td { border-bottom: 0; }
+td.n, th.n { text-align: right; font-family: var(--font-mono); width: 1%; white-space: nowrap; }
+td.rank { color: var(--muted); font-family: var(--font-mono); width: 1%; }
+.bar { height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--line) 70%, transparent); min-width: 60px; }
+.bar i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+
+kbd {
+  display: inline-block; font: 500 .82rem var(--font-mono); padding: 1px 7px; margin-right: 3px;
+  border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; background: var(--bg); color: var(--fg);
+}
+td.time { font: 400 .75rem var(--font-mono); color: var(--muted); width: 1%; white-space: nowrap; }
+tr.fresh td { animation: fresh 1s ease-out; }
+@keyframes fresh { from { background: var(--accent-soft); } to { background: transparent; } }
+.empty { padding: 16px 14px; color: var(--muted); }
+
+.pager {
+  position: sticky; bottom: 0; background: var(--surface);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 10px; border-top: 1px solid var(--line);
+  font: 400 .75rem var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.pager .group { display: flex; gap: 6px; flex: none; }
+.pager button { flex: none; min-width: 30px; padding: 4px 10px; font-size: .8rem; white-space: nowrap; }
+.pager .info { flex: 1 1 auto; min-width: 0; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pager button:disabled { opacity: .4; cursor: default; }
+
+/* clipboard rows grow with their preview (up to 3 lines), unlike the fixed-height key tables */
+.cliptable-wrap { overflow-x: auto; }
+.cliptable { table-layout: fixed; }
+.cliptable th.time-col { width: 6.5rem; }
+.cliptable th.origin-col { width: 9rem; }
+.cliptable th.actions-col { width: 9.5rem; }
+.cliptable td { height: auto; padding: 10px 14px; vertical-align: top; }
+.cliptable td.time { padding-top: 12px; }
+td.origin { font-weight: 700; overflow: hidden; text-overflow: ellipsis; padding-top: 11px; }
+.cliptable td.actions { padding-block: 7px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.preview {
+  margin: 0; font: 400 .85rem/1.45 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; user-select: text;
+}
+.h2side { display: flex; align-items: center; gap: 12px; min-width: 0; }
+button.small, .rowbtns button { padding: 4px 10px; font-size: .8rem; white-space: nowrap; }
+.rowbtns { display: flex; gap: 6px; }
+.copy.done { color: var(--ok); border-color: var(--ok); }
+.del:hover { color: #c4452f; border-color: #c4452f; }
+@media (max-width: 720px) { .cliptable { min-width: 640px; } }
+
+.tools { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; align-items: center; color: var(--muted); font-size: .8rem; }
+.tools code { font-family: var(--font-mono); font-size: .75rem; user-select: text; }
+button {
+  font: 500 .85rem var(--font-ui); padding: 7px 14px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--fg);
+}
+button.armed { border-color: #c4452f; color: #c4452f; }
+@media (prefers-reduced-motion: reduce) {
+  .cap, .key.down .cap { transition: none; }
+  tr.fresh td { animation: none; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div>
+      <h1>Keystroke Board</h1>
+      <p class="sub">Keychron K3 v1 · 84 keys · Mac layout</p>
+    </div>
+    <div class="actions">
+      <button id="reset" type="button">Clear all data</button>
+      <button class="status" id="status" type="button" data-state="connecting" aria-pressed="false">Connecting</button>
+    </div>
+  </header>
+
+  <div class="case">
+    <div class="kb" id="kb"></div>
+    <div class="kbfoot"><span>The light key is handled inside the keyboard, so macOS never sees it.</span><span>K3 · 75%</span></div>
+  </div>
+
+  <div class="now">
+    <div><div class="label">Last</div><div class="big" id="last">–</div></div>
+    <div><div class="label">Presses, all time</div><div class="big" id="total">0</div></div>
+    <div><div class="label">Distinct keys &amp; combos</div><div class="big" id="distinct">0</div></div>
+  </div>
+
+  <div class="panels">
+    <section>
+      <h2>Most used <small>combos count as one entry</small></h2>
+      <div class="panel">
+        <div class="rows">
+          <table>
+            <thead><tr><th>#</th><th>Key</th><th class="n">Count</th><th>Share</th></tr></thead>
+            <tbody id="top"></tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <button type="button" id="topPrev" title="Previous page" aria-label="Previous page">‹</button>
+          <span class="info" id="topInfo"></span>
+          <button type="button" id="topNext" title="Next page" aria-label="Next page">›</button>
+        </div>
+      </div>
+    </section>
+    <section>
+      <h2>History <small id="histnote">newest first</small></h2>
+      <div class="panel">
+        <div class="rows">
+          <table>
+            <thead><tr><th>Time</th><th>Key</th></tr></thead>
+            <tbody id="hist"></tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <button type="button" id="histPrev" title="Newer" aria-label="Newer">‹</button>
+          <span class="info" id="histInfo"></span>
+          <span class="group">
+            <button type="button" id="histLatest" hidden>Latest</button>
+            <button type="button" id="histNext" title="Older" aria-label="Older">›</button>
+          </span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section>
+    <h2>Clipboard
+      <span class="h2side">
+        <small id="clipnote">newest first</small>
+        <button type="button" class="small" id="clipClear">Clear clipboard history</button>
+      </span>
+    </h2>
+    <div class="panel">
+      <div class="cliptable-wrap">
+        <table class="cliptable">
+          <thead><tr>
+            <th class="time-col">Time</th><th class="origin-col">Origin</th><th>Content</th>
+            <th class="actions-col"><span class="sr">Actions</span></th>
+          </tr></thead>
+          <tbody id="clips"></tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <button type="button" id="clipPrev" title="Newer" aria-label="Newer">‹</button>
+        <span class="info" id="clipInfo"></span>
+        <span class="group">
+          <button type="button" id="clipLatest" hidden>Latest</button>
+          <button type="button" id="clipNext" title="Older" aria-label="Older">›</button>
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <div class="tools">
+    <span>Saved to <code id="dbpath">keys.db</code></span>
+  </div>
+</div>
+
+<script>
+(() => {
+  // [code, legend, width, opts]  opts: { alt: shifted legend, mod, r: right-aligned, dead, cls }
+  const F = n => ['F' + n, 'F' + n, 1];
+  const L = c => ['Key' + c, c, 1];
+  const ROWS = [
+    [['Escape', 'esc', 1, { cls: 'esc' }], F(1), F(2), F(3), F(4), F(5), F(6), F(7), F(8), F(9), F(10), F(11), F(12),
+     ['PrintScreen', 'prt sc', 1], ['Delete', 'del', 1], [null, 'light', 1, { dead: true }]],
+    [['Backquote', '`', 1, { alt: '~' }], ['Digit1', '1', 1, { alt: '!' }], ['Digit2', '2', 1, { alt: '@' }], ['Digit3', '3', 1, { alt: '#' }],
+     ['Digit4', '4', 1, { alt: '$' }], ['Digit5', '5', 1, { alt: '%' }], ['Digit6', '6', 1, { alt: '^' }], ['Digit7', '7', 1, { alt: '&' }],
+     ['Digit8', '8', 1, { alt: '*' }], ['Digit9', '9', 1, { alt: '(' }], ['Digit0', '0', 1, { alt: ')' }], ['Minus', '-', 1, { alt: '_' }],
+     ['Equal', '=', 1, { alt: '+' }], ['Backspace', 'backspace', 2, { mod: true, r: true }], ['Home', 'home', 1]],
+    [['Tab', 'tab', 1.5, { mod: true }], ...'QWERTYUIOP'.split('').map(L), ['BracketLeft', '[', 1, { alt: '{' }],
+     ['BracketRight', ']', 1, { alt: '}' }], ['Backslash', '\\', 1.5, { alt: '|' }], ['PageUp', 'pg up', 1]],
+    [['CapsLock', 'caps lock', 1.75, { mod: true }], ...'ASDFGHJKL'.split('').map(L), ['Semicolon', ';', 1, { alt: ':' }],
+     ['Quote', "'", 1, { alt: '"' }], ['Enter', 'return', 2.25, { mod: true, r: true }], ['PageDown', 'pg dn', 1]],
+    [['ShiftLeft', 'shift', 2.25, { mod: true }], ...'ZXCVBNM'.split('').map(L), ['Comma', ',', 1, { alt: '<' }],
+     ['Period', '.', 1, { alt: '>' }], ['Slash', '/', 1, { alt: '?' }], ['ShiftRight', 'shift', 1.75, { mod: true, r: true }],
+     ['ArrowUp', '↑', 1], ['End', 'end', 1]],
+    [['ControlLeft', 'control', 1.25, { mod: true }], ['AltLeft', 'option', 1.25, { mod: true }],
+     ['MetaLeft', 'command', 1.25, { mod: true }], ['Space', '', 6.25],
+     ['MetaRight', 'cmd', 1, { mod: true }], ['Fn', 'fn', 1, { mod: true }],
+     ['ControlRight', 'ctrl', 1, { mod: true }], ['ArrowLeft', '←', 1], ['ArrowDown', '↓', 1], ['ArrowRight', '→', 1]],
+  ];
+
+  const kb = document.getElementById('kb');
+  const keyEls = {};
+  ROWS.forEach((row, i) => {
+    const r = document.createElement('div');
+    r.className = 'row' + (i === 0 ? ' f' : '');
+    row.forEach(([code, legend, w, o = {}]) => {
+      const k = document.createElement('div');
+      k.className = 'key';
+      k.style.setProperty('--w', w);
+      const cap = document.createElement('div');
+      cap.className = 'cap' + (o.mod ? ' mod' : '') + (o.r ? ' r' : '') + (o.dead ? ' dead' : '') + (o.cls ? ' ' + o.cls : '');
+      if (o.alt) {
+        const a = document.createElement('span'); a.className = 'alt'; a.textContent = o.alt;
+        const b = document.createElement('span'); b.textContent = legend;
+        cap.append(a, b);
+      } else cap.textContent = legend;
+      k.appendChild(cap);
+      r.appendChild(k);
+      if (code) keyEls[code] = k;
+    });
+    kb.appendChild(r);
+  });
+
+  // state comes from Hammerspoon, which owns the SQLite file
+  const PAGE = 10;
+  let counts = new Map();
+  let topPage = 0;
+
+  const $ = id => document.getElementById(id);
+  const fmtTime = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  function chips(label, el) {
+    el.textContent = '';
+    label.split('+').forEach(p => { const k = document.createElement('kbd'); k.textContent = p; el.appendChild(k); });
+    return el;
+  }
+
+  let statsQueued = false;
+  function queueStats() {
+    if (statsQueued) return;
+    statsQueued = true;
+    requestAnimationFrame(() => { statsQueued = false; renderStats(); });
+  }
+  function renderStats() {
+    const entries = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    const total = entries.reduce((s, [, n]) => s + n, 0);
+    $('total').textContent = total.toLocaleString();
+    $('distinct').textContent = entries.length.toLocaleString();
+    const pages = Math.max(1, Math.ceil(entries.length / PAGE));
+    topPage = Math.min(Math.max(0, topPage), pages - 1);
+    $('topInfo').textContent = `Page ${topPage + 1} of ${pages} · ${entries.length.toLocaleString()} entries`;
+    $('topPrev').disabled = topPage === 0;
+    $('topNext').disabled = topPage >= pages - 1;
+    const tb = $('top');
+    tb.textContent = '';
+    if (!entries.length) {
+      tb.innerHTML = '<tr><td colspan="4" class="empty">Type anywhere on your Mac to start counting.</td></tr>';
+      return;
+    }
+    const max = entries[0][1];
+    const start = topPage * PAGE;
+    entries.slice(start, start + PAGE).forEach(([label, n], j) => {
+      const i = start + j;
+      const tr = document.createElement('tr');
+      const share = n / total * 100;
+      tr.innerHTML = `<td class="rank">${i + 1}</td><td></td><td class="n">${n.toLocaleString()}</td>
+        <td><div class="bar" title="${share.toFixed(1)}% of presses"><i style="width:${(n / max * 100).toFixed(1)}%"></i></div></td>`;
+      chips(label, tr.children[1]);
+      tb.appendChild(tr);
+    });
+  }
+  function histItem(h, fresh) {
+    const tr = document.createElement('tr');
+    if (fresh) tr.className = 'fresh';
+    const t = document.createElement('td');
+    t.className = 'time';
+    t.textContent = fmtTime(h.t);
+    tr.append(t, chips(h.label, document.createElement('td')));
+    return tr;
+  }
+  function histEmpty() {
+    const tr = document.createElement('tr');
+    tr.className = 'empty';
+    tr.innerHTML = '<td colspan="2" class="empty">Nothing yet.</td>';
+    return tr;
+  }
+  function clipEmpty() {
+    const tr = document.createElement('tr');
+    tr.className = 'empty';
+    tr.innerHTML = '<td colspan="4" class="empty">Copy some text in any app and it shows up here.</td>';
+    return tr;
+  }
+  function clipItem(c, fresh) {
+    const tr = document.createElement('tr');
+    if (fresh) tr.className = 'fresh';
+    const t = document.createElement('td');
+    t.className = 'time';
+    t.textContent = fmtTime(c.t);
+    const origin = document.createElement('td');
+    origin.className = 'origin';
+    origin.textContent = c.app || 'Unknown app';
+    origin.title = origin.textContent;
+    const content = document.createElement('td');
+    const pre = document.createElement('p');
+    pre.className = 'preview';
+    pre.textContent = c.preview;
+    pre.title = c.length > c.preview.length ? 'Preview is shortened; Copy puts back the full text' : '';
+    const btns = document.createElement('div');
+    btns.className = 'rowbtns';
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'copy'; b.textContent = 'Copy'; b.dataset.id = c.id;
+    b.addEventListener('click', () => window.webkit?.messageHandlers?.kb?.postMessage({ action: 'copyClip', id: c.id }));
+    const d = document.createElement('button');
+    d.type = 'button'; d.className = 'del'; d.textContent = 'Delete';
+    d.addEventListener('click', () => {
+      d.disabled = true;
+      window.webkit?.messageHandlers?.kb?.postMessage({ action: 'deleteClip', id: c.id, offset: clips.offset, limit: PAGE });
+    });
+    btns.append(b, d);
+    content.append(pre);
+    const actions = document.createElement('td');
+    actions.className = 'actions';
+    actions.append(btns);
+    tr.append(t, origin, content, actions);
+    return tr;
+  }
+
+  // a newest-first list paged from the database; offset 0 is the live page
+  function makeFeed({ list, prev, next, latest, info, action, unit, item, empty }) {
+    const f = { rows: [], offset: 0, total: 0 };
+    f.renderPager = () => {
+      const pages = Math.max(1, Math.ceil(f.total / PAGE));
+      const page = Math.min(pages, Math.floor(f.offset / PAGE) + 1);
+      $(info).textContent = `Page ${page} of ${pages} · ${f.total.toLocaleString()} ${f.total === 1 ? unit[0] : unit[1]}`;
+      $(prev).disabled = f.offset === 0;
+      $(next).disabled = f.offset + PAGE >= f.total;
+      $(latest).hidden = f.offset === 0;
+    };
+    f.render = () => {
+      const ul = $(list);
+      ul.textContent = '';
+      if (!f.rows.length) ul.appendChild(empty());
+      else f.rows.forEach(r => ul.appendChild(item(r)));
+      f.renderPager();
+    };
+    f.load = (rows, total, offset = 0) => {
+      f.rows = Array.isArray(rows) ? rows : [];
+      f.total = total || 0;
+      f.offset = offset;
+      f.render();
+    };
+    f.add = r => {
+      f.total++;
+      if (f.offset === 0) {
+        f.rows.unshift(r);
+        if (f.rows.length > PAGE) f.rows.length = PAGE;
+        const ul = $(list);
+        if (ul.firstElementChild?.classList.contains('empty')) ul.textContent = '';
+        ul.prepend(item(r, true));
+        while (ul.children.length > PAGE) ul.lastElementChild.remove();
+      } else {
+        f.offset++;  // keep an older page still while new rows arrive
+      }
+      f.renderPager();
+    };
+    const request = offset => window.webkit?.messageHandlers?.kb?.postMessage({ action, offset: Math.max(0, offset), limit: PAGE });
+    $(prev).addEventListener('click', () => request(f.offset - PAGE));
+    $(next).addEventListener('click', () => request(f.offset + PAGE));
+    $(latest).addEventListener('click', () => request(0));
+    return f;
+  }
+
+  const hist = makeFeed({ list: 'hist', prev: 'histPrev', next: 'histNext', latest: 'histLatest', info: 'histInfo',
+    action: 'history', unit: ['press', 'presses'], item: histItem, empty: histEmpty });
+  const clips = makeFeed({ list: 'clips', prev: 'clipPrev', next: 'clipNext', latest: 'clipLatest', info: 'clipInfo',
+    action: 'clips', unit: ['item', 'items'], item: clipItem, empty: clipEmpty });
+
+  // keys stay lit at least MIN_LIT ms: some keys (fn) send down and up in the same instant,
+  // which would otherwise add and remove the highlight before it is ever painted
+  const MIN_LIT = 150;
+  const litAt = {};
+  const releaseTimers = {};
+  function press(code) {
+    clearTimeout(releaseTimers[code]);
+    litAt[code] = performance.now();
+    keyEls[code]?.classList.add('down');
+  }
+  function release(code) {
+    const wait = MIN_LIT - (performance.now() - (litAt[code] || 0));
+    clearTimeout(releaseTimers[code]);
+    if (wait > 0) releaseTimers[code] = setTimeout(() => keyEls[code]?.classList.remove('down'), wait);
+    else keyEls[code]?.classList.remove('down');
+  }
+
+  const STATUS_TEXT = { listening: 'Listening', paused: 'Paused', secure: 'Paused · password field', connecting: 'Connecting', noaccess: 'Needs Accessibility permission' };
+
+  function handle(m) {
+    switch (m.type) {
+      case 'snapshot':
+        counts = new Map(Array.isArray(m.counts) ? m.counts : []);
+        topPage = 0;
+        hist.load(m.history, m.historyTotal);
+        clips.load(m.clips, m.clipsTotal);
+        if (m.dbPath) $('dbpath').textContent = m.dbPath.replace(/^\/Users\/[^/]+/, '~');
+        if (m.historyDays) {
+          $('histnote').textContent = `newest first · kept ${m.historyDays} days`;
+          $('clipnote').textContent = `newest first · kept ${m.historyDays} days`;
+        }
+        $('last').textContent = '–';
+        if (hist.rows[0]) chips(hist.rows[0].label, $('last'));
+        renderStats();
+        break;
+      case 'historyPage': hist.load(m.rows, m.total, m.offset || 0); break;
+      case 'clipsPage': clips.load(m.rows, m.total, m.offset || 0); break;
+      case 'record':
+        counts.set(m.label, (counts.get(m.label) || 0) + 1);
+        hist.add({ t: m.t, label: m.label });
+        chips(m.label, $('last'));
+        queueStats();
+        break;
+      case 'clip': clips.add(m); break;
+      case 'copied': {
+        const b = document.querySelector(`.copy[data-id="${Number(m.id)}"]`);
+        if (b) {
+          b.textContent = 'Copied'; b.classList.add('done');
+          setTimeout(() => { b.textContent = 'Copy'; b.classList.remove('done'); }, 1500);
+        }
+        break;
+      }
+      case 'down': press(m.code); break;
+      case 'up': release(m.code); break;
+      case 'flash': press(m.code); release(m.code); break;
+      case 'status': {
+        const s = $('status');
+        s.dataset.state = m.state;
+        s.textContent = STATUS_TEXT[m.state] || m.state;
+        s.setAttribute('aria-pressed', String(m.state === 'paused'));
+        s.title = m.state === 'paused' ? 'Click to resume recording' : 'Click to pause recording';
+        if (m.state !== 'listening') Object.keys(keyEls).forEach(release);
+        break;
+      }
+    }
+  }
+  window.KB = { batch: msgs => (Array.isArray(msgs) ? msgs : []).forEach(handle) };
+
+  $('topPrev').addEventListener('click', () => { topPage--; renderStats(); });
+  $('topNext').addEventListener('click', () => { topPage++; renderStats(); });
+
+  // destructive buttons need a second click within 3 seconds
+  function confirmButton(btn, action) {
+    const label = btn.textContent;
+    let timer;
+    btn.addEventListener('click', () => {
+      if (!btn.classList.contains('armed')) {
+        btn.classList.add('armed'); btn.textContent = 'Click again to clear';
+        timer = setTimeout(() => { btn.classList.remove('armed'); btn.textContent = label; }, 3000);
+        return;
+      }
+      clearTimeout(timer);
+      btn.classList.remove('armed'); btn.textContent = label;
+      window.webkit?.messageHandlers?.kb?.postMessage({ action });
+    });
+  }
+  confirmButton($('reset'), 'clear');
+  confirmButton($('clipClear'), 'clearClips');
+
+  // Hammerspoon flips recording and answers with the new status
+  $('status').addEventListener('click', () => {
+    window.webkit?.messageHandlers?.kb?.postMessage({ action: 'togglePause' });
+  });
+
+  renderStats();
+  hist.render();
+  clips.render();
+})();
+</script>
+</body>
+</html>

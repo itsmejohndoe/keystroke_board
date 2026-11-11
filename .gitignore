@@ -1,0 +1,5 @@
+# keystroke and clipboard data: private, never commit
+keys.db
+keys.db-wal
+keys.db-shm
+keys.db-journal
