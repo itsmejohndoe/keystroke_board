@@ -360,6 +360,7 @@ button.armed { border-color: #c4452f; color: #c4452f; }
 .calltable th { background: transparent; font-size: .62rem; }
 .calltable td { font: 400 .8rem var(--font-mono); }
 .calltable td.time { font-size: .75rem; }
+.calltable td.callmodel { max-width: 15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .calltable tr:last-child td { border-bottom: 0; }
 /* a paged table keeps the height of a full page (header, 10 calls, total), so the pager doesn't move */
 .calltable.paged table { margin-bottom: calc((10 - var(--n, 10)) * 32px); }
@@ -944,6 +945,19 @@ button.armed { border-color: #c4452f; color: #c4452f; }
   function addClaude(records) {
     (Array.isArray(records) ? records : []).forEach(r => { r.cost = replyCost(r); claude.push(r); });
   }
+  // tools a call asked for, read after its record was sent: { id, tools }
+  function addTools(list) {
+    if (!Array.isArray(list) || !list.length) return;
+    const byId = new Map(claude.filter(r => r.id).map(r => [r.id, r]));
+    list.forEach(x => { const r = byId.get(x.id); if (r && Array.isArray(x.tools)) r.tools = x.tools; });
+  }
+  // "Read ×3, Grep": the tools a call asked for, in order of first use. MCP tools (mcp__server__tool) show the tool's own name.
+  const toolName = n => String(n).startsWith('mcp__') ? String(n).split('__').pop() : String(n);
+  function toolList(names) {
+    const counts = new Map();
+    (Array.isArray(names) ? names : []).forEach(n => counts.set(toolName(n), (counts.get(toolName(n)) || 0) + 1));
+    return [...counts].map(([n, c]) => c > 1 ? `${n} ×${c}` : n).join(', ');
+  }
   function summarize(rows) {
     const s = { cost: 0, out: 0, replies: rows.length, sessions: new Set(), last: 0 };
     rows.forEach(r => { s.cost += r.cost; s.out += r.o; s.sessions.add(r.s); s.last = Math.max(s.last, r.t); });
@@ -1282,7 +1296,7 @@ button.armed { border-color: #c4452f; color: #c4452f; }
         ['Prompt', 'Your prompts', 'Something you typed and sent. Tool results, slash commands and system notes are left out.'],
         ['Thinking tokens', 'API call details', 'Output Claude spends reasoning before it answers or acts. Billed as output. Claude Code keeps the count but not the text.'],
         ['Compaction', 'API call details', 'When a conversation gets too long, Claude Code replaces the older part with a summary. The next call then writes the shorter conversation to the cache again, so it shows a jump in cache writes and a drop in cache reads.'],
-        ['Stop reason', 'API call details', 'Why a call ended: it asked for a tool to run (another call follows with the result), it gave the final reply, or it hit the output limit.'],
+        ['Stop reason', 'API call details', 'Why a call ended: it asked for tools to run (named in the popup and in the API calls table, e.g. "Read ×3, Grep"; another call follows with the results), it gave the final reply, or it hit the output limit.'],
         ['Timeline', 'API call details', 'How long each part of a call took to arrive (thinking, reply text, tool inputs), then how long the tool ran on your machine before the next call. The model is only busy until the tool starts. Thinking followed by reply text is logged at the same moment, so the two share one time.'],
         ['Prompt review', 'Prompt details', 'Review runs the prompt-review skill on the prompt in Claude Code, in the background: a score for clarity, completeness, structure, efficiency and robustness, the top fixes and a tighter rewrite. It reads the prompt only and never runs it, and it uses your plan like any other Claude Code request. Reviews are kept until Hammerspoon reloads.'],
         ['Project', 'Breakdown · Project detail', 'The folder Claude Code was started in. Sessions from the Claude desktop app show as "Claude app".'],
@@ -1477,7 +1491,7 @@ button.armed { border-color: #c4452f; color: #c4452f; }
         const cells = [
           ['n rank', String(k + 1)],
           ['time', `${fmtTime(r.t)} · +${after >= 60 ? Math.floor(after / 60) + 'm ' + (after % 60) + 's' : after + 's'}`],
-          ['', modelName(r.m) + (r.fast ? ' · fast' : '')],
+          ['callmodel', modelName(r.m) + (r.fast ? ' · fast' : '') + (r.tools ? ` · ${toolList(r.tools)}` : '')],
           ['n', r.i.toLocaleString()],
           ['n', (r.w5 + r.w1).toLocaleString()],
           ['n', r.r.toLocaleString()],
@@ -1486,6 +1500,7 @@ button.armed { border-color: #c4452f; color: #c4452f; }
         ];
         cells.forEach(([cls, text]) => { const td = tr.insertCell(); td.className = cls; td.textContent = text; });
         tr.cells[1].title = new Date(r.t).toLocaleString();
+        if (r.tools) tr.cells[2].title = `${modelName(r.m)} · asked for ${r.tools.join(', ')}`;
         if (r.id) {
           tr.className = 'callrow'; tr.tabIndex = 0; tr.setAttribute('role', 'button');
           tr.addEventListener('click', () => openCall(p, rows, k));
@@ -1525,6 +1540,10 @@ button.armed { border-color: #c4452f; color: #c4452f; }
   const arr = x => Array.isArray(x) ? x : [];  // Lua sends an empty list as {}
   const approxTok = chars => '≈' + fmtTok(Math.round(chars / 4));
   const STOP_TEXT = { tool_use: 'asked for a tool', end_turn: 'final reply', max_tokens: 'hit the output limit', stop_sequence: 'stop sequence', refusal: 'refused', pause_turn: 'paused' };
+  const callTools = d => arr(d.parts).filter(x => x.kind === 'tool').map(x => x.name).filter(Boolean);
+  // "asked for Bash" when the call stopped to run tools; the other stop reasons as plain words
+  const stopText = d => d.stop === 'tool_use' && callTools(d).length
+    ? `asked for ${toolList(callTools(d))}` : STOP_TEXT[d.stop] || d.stop || '';
   const PART_TEXT = { thinking: 'Thinking', text: 'Reply text', tool: 'Tool input', run: 'Tool running' };
   let callAsk = null;  // asks Lua once stepping pauses, so holding an arrow key doesn't queue a read per call
   function openCall(p, list, k) {
@@ -1642,7 +1661,7 @@ button.armed { border-color: #c4452f; color: #c4452f; }
       let i = 0;
       const item = (term, note) => { const el = hudItem(i++, term, note); body.appendChild(el); return el; };
       // overview tiles
-      const ov = item('Overview', d ? STOP_TEXT[d.stop] || d.stop || '' : '');
+      const ov = item('Overview', d ? stopText(d) : '');
       const segs = d ? callSegments(d) : [];
       const modelMs = segs.filter(x => x.kind !== 'run').reduce((a, x) => a + x.ms, 0);
       const tiles = document.createElement('div');
@@ -1770,7 +1789,7 @@ button.armed { border-color: #c4452f; color: #c4452f; }
         ['Model', r.m],
         ['Effort', d.effort],
         ['Thinking', d.thinking],
-        ['Stop reason', d.stop],
+        ['Stop reason', d.stop && callTools(d).length ? `${d.stop} (${callTools(d).join(', ')})` : d.stop],
         ['Service tier', d.tier],
         ['Speed', d.speed],
         ['Message id', r.id],
@@ -1876,7 +1895,7 @@ button.armed { border-color: #c4452f; color: #c4452f; }
         if (m.tab) showTab(m.tab);
         if (m.user) { $('title').textContent = `${m.user} Board`; document.title = `${m.user} Board`; }
         break;
-      case 'claude': addClaude(m.records); addPrompts(m.prompts); endPrompts(m.ends); renderClaude(); break;
+      case 'claude': addClaude(m.records); addPrompts(m.prompts); endPrompts(m.ends); addTools(m.tools); renderClaude(); break;
       case 'promptCopied': {
         document.querySelectorAll(`.pcopy[data-pid="${Number(m.id)}"]`).forEach(b => {
           b.textContent = 'Copied'; b.classList.add('done');

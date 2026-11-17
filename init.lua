@@ -146,7 +146,8 @@ local CLAUDE_DAYS = 30   -- Claude Code deletes transcripts after 30 days by def
 local CLAUDE_POLL = 30   -- seconds between transcript checks
 
 local claudeFiles = {}    -- path -> bytes already read
-local claudeSeen = {}     -- message id|request id -> true; a reply is logged once per content block, and resumed sessions copy history
+local claudeSeen = {}     -- message id|request id -> its record (prompts: u:uuid -> true); a reply is logged once per content block, and resumed sessions copy history
+local claudeToolIds = setmetatable({}, { __mode = "k" })  -- record -> tool_use ids already counted in its tools
 local claudeRecords = {}  -- one record per reply in the last CLAUDE_DAYS
 local claudeCallLoc = {}  -- message id -> { path, from, at }: byte offsets of the previous reply and this one, for call details
 local claudeFileReply = {}  -- path -> { id, start, prev }: the latest reply read in each transcript and where it starts
@@ -190,6 +191,7 @@ local function projectName(cwd)
   return cwd:match("([^/]+)/*$") or cwd
 end
 
+-- returns the reply's record and whether it is new; a later line of a reply already read returns its record
 local function claudeReply(e, cutoff)
   local m = e.message
   local u = m.usage
@@ -197,13 +199,34 @@ local function claudeReply(e, cutoff)
   local t = isoToMs(e.timestamp or "")
   if not t or t < cutoff then return nil end
   local key = tostring(m.id or e.uuid) .. "|" .. tostring(e.requestId)
-  if claudeSeen[key] then return nil end
-  claudeSeen[key] = true
+  if claudeSeen[key] then return claudeSeen[key], false end
   local cc = type(u.cache_creation) == "table" and u.cache_creation or {}
   local w1 = cc.ephemeral_1h_input_tokens or 0
-  return { t = t, m = m.model, p = projectName(e.cwd), s = e.sessionId,
-           i = u.input_tokens or 0, w5 = (u.cache_creation_input_tokens or 0) - w1, w1 = w1,
-           r = u.cache_read_input_tokens or 0, o = u.output_tokens or 0, fast = u.speed == "fast" or nil }
+  local r = { t = t, m = m.model, p = projectName(e.cwd), s = e.sessionId,
+              i = u.input_tokens or 0, w5 = (u.cache_creation_input_tokens or 0) - w1, w1 = w1,
+              r = u.cache_read_input_tokens or 0, o = u.output_tokens or 0, fast = u.speed == "fast" or nil }
+  claudeSeen[key] = r
+  return r, true
+end
+
+-- adds the tools this line of a reply asks for to r.tools, in order; true if any were new.
+-- Tool ids keep a resumed session's copy of the same line from counting twice.
+local function claudeReplyTools(r, e)
+  local added = false
+  for _, b in ipairs(type(e.message.content) == "table" and e.message.content or {}) do
+    if type(b) == "table" and b.type == "tool_use" and type(b.name) == "string" then
+      local ids = claudeToolIds[r] or {}
+      claudeToolIds[r] = ids
+      local tid = b.id or (#(r.tools or {}) + 1)
+      if not ids[tid] then
+        ids[tid] = true
+        r.tools = r.tools or {}
+        r.tools[#r.tools + 1] = b.name
+        added = true
+      end
+    end
+  end
+  return added
 end
 
 -- only what you typed: tool results, slash commands, skill text and system notes are "user" lines too,
@@ -244,7 +267,7 @@ local function claudeTurnEnd(line, path, ends)
   ends[#ends + 1] = { id = p.id, done = t }
 end
 
--- fresh = { replies, prompts, ends }: what this scan found. offset is where the line starts in the file.
+-- fresh = { replies, prompts, ends, tools }: what this scan found. offset is where the line starts in the file.
 local function claudeLine(line, cutoff, fresh, path, offset)
   if line:find('"subtype":"turn_duration"', 1, true) then return claudeTurnEnd(line, path, fresh.ends) end
   local reply = line:find('"type":"assistant"', 1, true) and line:find('"usage"', 1, true)
@@ -259,7 +282,17 @@ local function claudeLine(line, cutoff, fresh, path, offset)
     claudeFileReply[path] = st
     if mid ~= st.id then st.prev, st.id, st.start = st.start, mid, offset end
   end
-  local r = reply and claudeReply(e, cutoff) or prompt and claudePrompt(e, cutoff)
+  local r, new
+  if reply then
+    r, new = claudeReply(e, cutoff)
+    -- the tools often come on a later line of the reply, sometimes after the record was sent: send them by id
+    if r and claudeReplyTools(r, e) and not new and r.id then
+      fresh.tools[#fresh.tools + 1] = { id = r.id, tools = r.tools }
+    end
+    if not new then r = nil end
+  else
+    r = claudePrompt(e, cutoff)
+  end
   if r and mid then
     r.id = mid
     local st = claudeFileReply[path]
@@ -288,9 +321,10 @@ local function claudeRead(path, pos, cutoff, fresh)
   return pos + last
 end
 
--- returns { replies, prompts, ends } added since the last scan; ends are { id, done } for prompts whose turn ended
+-- returns { replies, prompts, ends, tools } added since the last scan; ends are { id, done } for prompts whose turn
+-- ended, tools are { id, tools } for replies sent before their tool lines were read
 local function claudeScan()
-  local found = { replies = {}, prompts = {}, ends = {} }
+  local found = { replies = {}, prompts = {}, ends = {}, tools = {} }
   local cutoff = nowMs() - CLAUDE_DAYS * 86400000
   local function walk(dir)
     local ok, iter, obj = pcall(hs.fs.dir, dir)
@@ -526,8 +560,8 @@ end
 local function pollClaude()
   local ok, found = pcall(claudeScan)
   if not ok then print("keystroke_board: Claude usage scan failed: " .. tostring(found)); return end
-  if #found.replies > 0 or #found.prompts > 0 or #found.ends > 0 then
-    ui({ type = "claude", records = found.replies, prompts = found.prompts, ends = found.ends })
+  if #found.replies > 0 or #found.prompts > 0 or #found.ends > 0 or #found.tools > 0 then
+    ui({ type = "claude", records = found.replies, prompts = found.prompts, ends = found.ends, tools = found.tools })
   end
 end
 
