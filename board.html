@@ -108,6 +108,16 @@ h1 { margin: 0; font: 700 1.6rem/1.2 var(--font-hud); text-transform: uppercase;
 .status[data-state="listening"]::before { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
 .status[data-state="secure"]::before, .status[data-state="paused"]::before, .status[data-state="noaccess"]::before { background: var(--warn); }
 
+/* pixel mascot above the keyboard (an original sprite): drag the corner to resize, Lua keeps the height */
+.face {
+  height: 240px; min-height: 200px; max-height: 70vh; resize: vertical; overflow: hidden;
+  display: grid; place-items: center; padding: 12px; margin-bottom: 14px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 4px;
+  background-image: linear-gradient(var(--hud-grid) 1px, transparent 1px), linear-gradient(90deg, var(--hud-grid) 1px, transparent 1px);
+  background-size: 14px 14px; background-position: -1px -1px;
+}
+.face svg { height: 100%; width: auto; max-width: 100%; display: block; }
+
 .case {
   background: var(--case); border-radius: 14px; padding: 14px 14px 16px;
   box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, 0 12px 30px -12px rgba(0,0,0,.45), 0 0 0 1px var(--case-edge);
@@ -480,6 +490,7 @@ button.armed { border-color: #c4452f; color: #c4452f; }
     </div>
     <button id="reset" type="button">Clear all data</button>
   </div>
+  <div class="face" id="face" role="img" aria-label="Pixel dragon mascot"></div>
   <div class="case">
     <div class="kb" id="kb"></div>
     <div class="kbfoot"><span>The light key is handled inside the keyboard, so macOS never sees it.</span><span>K3 · 75%</span></div>
@@ -1278,6 +1289,57 @@ button.armed { border-color: #c4452f; color: #c4452f; }
     window.webkit?.messageHandlers?.kb?.postMessage({ action: 'tab', tab: showTab(name) });
   }));
 
+  // pixel mascot: an original 28×21 dragon head, one character per pixel ('.' is empty). Fixed colors, like the keyboard case.
+  const FACE = [
+    'oo........................oo',
+    'ohooo..oooooooooooooo..oooho',
+    'ohhhhoobbbbbbbbbbbbbboohhhho',
+    '.ohhhhbbllbbbbbbbbllbbhhhho.',
+    '..ooobbllbbbbbbbbbbllbbooo..',
+    '....obbbbbbbbbbbbbbbbbbo....',
+    '...obooooooobbbbooooooobo...',
+    '...obokwwkkobbbbokwwkkobo...',
+    '...oboiwwkiobbbboiwwkiobo...',
+    '...oboiikkiobbbboiikkiobo...',
+    '...obojjiwjobbbbojjiwjobo...',
+    '...obbooooobbbbbbooooobbo...',
+    '.ooobbbbbbbbbbbbbbbbbbbbooo.',
+    'osssobbbbbbbbbbbbbbbbbbossso',
+    '.ossobbbbbobboobbobbbbbosso.',
+    '..ooobbbbbboobboobbbbbbooo..',
+    '.....obbbbbbbbbbbbbbbbo.....',
+    '.....osbbbbbbbbbbbbbbso.....',
+    '......ossbbbbbbbbbbsso......',
+    '.......oossssssssssoo.......',
+    '.........oooooooooo.........',
+  ];
+  const FACE_COLORS = { o: '#0e1a33', b: '#2289b9', s: '#18678c', l: '#8cc9e6', h: '#2289b9', i: '#e8a317', j: '#ffd76a', k: '#1b1b1b', w: '#ffffff' };
+  function drawFace() {
+    let rects = '';
+    FACE.forEach((row, y) => {
+      for (let x = 0; x < row.length;) {
+        let end = x + 1;
+        while (row[end] === row[x]) end++;  // one rect per run of the same color
+        if (FACE_COLORS[row[x]]) rects += `<rect x="${x}" y="${y}" width="${end - x}" height="1" fill="${FACE_COLORS[row[x]]}"/>`;
+        x = end;
+      }
+    });
+    $('face').innerHTML = `<svg viewBox="0 0 ${FACE[0].length} ${FACE.length}" preserveAspectRatio="xMidYMid meet" shape-rendering="crispEdges" aria-hidden="true">${rects}</svg>`;
+  }
+  drawFace();
+  // the height you drag it to goes to Lua (hs.settings); the snapshot brings it back
+  let faceHeight = 0, faceTimer = null;
+  function setFaceHeight(h) { faceHeight = h; $('face').style.height = `${h}px`; }
+  new ResizeObserver(() => {
+    clearTimeout(faceTimer);
+    faceTimer = setTimeout(() => {
+      const h = Math.round($('face').getBoundingClientRect().height);
+      if (!h || h === faceHeight || $('face').offsetParent === null) return;  // unchanged, or hidden on the other tab
+      faceHeight = h;
+      window.webkit?.messageHandlers?.kb?.postMessage({ action: 'faceHeight', h });
+    }, 300);
+  }).observe($('face'));
+
   // glossary of the Claude tab: [term, where it appears, explanation]. Prices come from PRICES so the text stays in step with the estimates.
   function glossary() {
     const [, inp, out, read] = PRICES[1];
@@ -1893,6 +1955,7 @@ button.armed { border-color: #c4452f; color: #c4452f; }
         renderClaude();
         if (m.claudeLimits) { limits = m.claudeLimits; renderLimits(); }
         if (m.tab) showTab(m.tab);
+        if (m.faceHeight) setFaceHeight(m.faceHeight);
         if (m.user) { $('title').textContent = `${m.user} Board`; document.title = `${m.user} Board`; }
         break;
       case 'claude': addClaude(m.records); addPrompts(m.prompts); endPrompts(m.ends); addTools(m.tools); renderClaude(); break;

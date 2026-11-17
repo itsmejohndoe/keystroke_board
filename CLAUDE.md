@@ -26,7 +26,7 @@ Lua is the source of truth. The page only renders what Lua sends and asks Lua to
 
 | Lua → page `type` | Meaning |
 |---|---|
-| `snapshot` | Full reload: counts, first history page, first clips page, totals, `dbPath`, `historyDays`, `claude` (all Claude Code records), `claudePrompts` (all your prompts), `claudeDays`, `claudeLimits` (last plan-limits message, if any), `claudeReviews` (prompt reviews so far), `tab`, `user` (macOS account name, for the title) |
+| `snapshot` | Full reload: counts, first history page, first clips page, totals, `dbPath`, `historyDays`, `claude` (all Claude Code records), `claudePrompts` (all your prompts), `claudeDays`, `claudeLimits` (last plan-limits message, if any), `claudeReviews` (prompt reviews so far), `tab`, `faceHeight` (mascot height in px, if you resized it), `user` (macOS account name, for the title) |
 | `historyPage` / `clipsPage` | `{ offset, total, rows }` for a requested page |
 | `record` | One new keypress `{ t, label }` |
 | `clip` | One new clipboard item `{ id, t, kind, app, preview, length }` |
@@ -53,6 +53,7 @@ Lua is the source of truth. The page only renders what Lua sends and asks Lua to
 | `deleteClip` | Delete one clip `{ id, offset, limit }`, reply with the current page (steps back one page if it became empty) |
 | `clearClips` | Delete all clips only |
 | `tab` | Remember the tab shown `{ tab: "personal" \| "claude" }` in `hs.settings` (`TAB_SETTING`) |
+| `faceHeight` | Remember the mascot's height `{ h }` (200–2000px) in `hs.settings` (`FACE_SETTING`) |
 
 ## Database
 
@@ -133,7 +134,8 @@ clips   (id INTEGER PRIMARY KEY, ts INTEGER, kind TEXT, content TEXT, app TEXT) 
 ## Board (board.html) conventions
 
 - **Layout:** sized for a 1080×1920 portrait screen. The page scrolls if content is taller than the screen.
-- **Tabs:** the header stays on both; below it, **Personal** (keyboard, totals, Most used, History, Clipboard, the `keys.db` path) and **Claude** (plan limits, Claude Code usage, Breakdown). Each tab is a mission-control card (index, name in `--font-hud` Oxanium, live readout: presses and keys for Personal, session and weekly % for Claude, or today's cost when limits are unavailable); the active one has HUD corner brackets, a `--hud-grid` background and a lit bottom edge. `showTab()` switches them and the subtitle. The Listening/Paused toggle and **Clear all data** live in a toolbar at the top of Personal, since both only concern personal recording. The snapshot's `tab` restores the last one after a reload. Live updates keep flowing to the hidden tab.
+- **Tabs:** the header stays on both; below it, **Personal** (pixel mascot, keyboard, totals, Most used, History, Clipboard, the `keys.db` path) and **Claude** (plan limits, Claude Code usage, Breakdown). Each tab is a mission-control card (index, name in `--font-hud` Oxanium, live readout: presses and keys for Personal, session and weekly % for Claude, or today's cost when limits are unavailable); the active one has HUD corner brackets, a `--hud-grid` background and a lit bottom edge. `showTab()` switches them and the subtitle. The Listening/Paused toggle and **Clear all data** live in a toolbar at the top of Personal, since both only concern personal recording. The snapshot's `tab` restores the last one after a reload. Live updates keep flowing to the hidden tab.
+- **Pixel mascot:** an original blue 28×21 manga-style dragon head (horizontal blue horns, side fins, big glossy amber eyes, ω mouth) (`FACE`, one character per pixel, colors in `FACE_COLORS`) drawn by `drawFace()` as SVG rects with `crispEdges`, in `.face` above the keyboard. Fixed colors, like the keyboard case. It is at least 200px tall (`min-height`) and resizable by dragging the corner (`resize: vertical`); a `ResizeObserver` sends the new height (`faceHeight`) and the snapshot restores it. It's an original character: don't swap in a copyrighted one.
 - **Keyboard:** built from `ROWS` as `[code, legend, width-in-units, opts]` on a 16-unit grid. Sizes use container query units (`cqw`) so it scales with width. The keyboard case stays dark in both themes.
 - **Colors:** every color is a CSS custom property on `:root`, redefined under `prefers-color-scheme: dark`.
 - **Mission-control style** (shared by the whole page): the title, tab names and panel titles use `--font-hud` (Oxanium) in spaced capitals, panel titles have an accent bar on the left, `.panel` and `.now` get corner brackets (`--bracket`, `::before`/`::after`, so don't use those pseudo-elements on panels for anything else), stat tiles and meters get the `--hud-grid`, the page gets the fainter `--page-grid`, buttons are monospace capitals, and corners are 4px. The keyboard keeps its own rounded look because it depicts the real K3. Text values and data stay in IBM Plex Mono.
@@ -176,6 +178,7 @@ clips   (id INTEGER PRIMARY KEY, ts INTEGER, kind TEXT, content TEXT, app TEXT) 
 - **⌨ menu bar item:** Pause/Resume, Show/Hide board, Open data folder, Reload config.
 - **? (header, right, Claude tab only):** glossary of the Claude tab's terms.
 - **Board header:** the title, "<macOS account name> Board" (uppercase via CSS), and a subtitle that follows the tab.
+- **Pixel mascot (Personal tab):** drag its bottom-right corner to resize it; the height is kept.
 - **Personal tab toolbar:** the Listening/Paused toggle (left) and Clear all data (right).
 - **Clipboard header:** Clear clipboard history. Each row has Copy and Delete.
 - **Tabs:** Personal / Claude, under the header.

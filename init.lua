@@ -22,6 +22,7 @@ local SKIP_PASTEBOARD_TYPES = {
 }
 local TOGGLE_HOTKEY = { { "ctrl", "alt", "cmd" }, "k" }
 local TAB_SETTING = "keystroke_board.tab"  -- board tab last shown (personal or claude), kept across reloads
+local FACE_SETTING = "keystroke_board.faceHeight"  -- height in px of the pixel mascot above the keyboard, set by dragging
 
 local T = hs.eventtap.event.types
 local AUTOREPEAT = hs.eventtap.event.properties.keyboardEventAutorepeat
@@ -420,7 +421,7 @@ local function snapshot()
   local clips = clipPage(0, CLIP_PAGE)
   return { type = "snapshot", counts = counts, history = page.rows, historyTotal = page.total,
            clips = clips.rows, clipsTotal = clips.total, dbPath = DB_PATH, historyDays = HISTORY_DAYS,
-           claude = claudeRecords, claudePrompts = claudePrompts, claudeDays = CLAUDE_DAYS, claudeLimits = claudeLimits, claudeReviews = reviewList(), tab = hs.settings.get(TAB_SETTING) or "personal",
+           claude = claudeRecords, claudePrompts = claudePrompts, claudeDays = CLAUDE_DAYS, claudeLimits = claudeLimits, claudeReviews = reviewList(), tab = hs.settings.get(TAB_SETTING) or "personal", faceHeight = hs.settings.get(FACE_SETTING),
            user = os.getenv("USER") }
 end
 
@@ -869,6 +870,9 @@ local function createWindow()
       ui(page)
     elseif body.action == "tab" then
       if body.tab == "personal" or body.tab == "claude" then hs.settings.set(TAB_SETTING, body.tab) end
+    elseif body.action == "faceHeight" then
+      local h = tonumber(body.h)
+      if h and h >= 200 and h <= 2000 then hs.settings.set(FACE_SETTING, math.floor(h)) end
     elseif body.action == "clearClips" then
       db:exec("DELETE FROM clips")
       lastClip = nil
